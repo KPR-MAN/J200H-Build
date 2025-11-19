@@ -1,4 +1,4 @@
-name: J200H Final Build
+name: Build LineageOS 14.1 for J200H (Direct Method)
 
 on:
   workflow_dispatch:
@@ -6,59 +6,83 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ubuntu:18.04
+    
+    env:
+      # We define the variables here like your example
+      DEVICE: j23g
+      REPO_URL: https://github.com/LineageOS/android.git
+      REPO_BRANCH: cm-14.1
 
     steps:
-    - name: 1. Checkout Code
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: 2. Clean Disk
-      uses: rokibhasansagar/slimhub_actions@main
+      - name: Clean Disk Space
+        uses: rokibhasansagar/slimhub_actions@main
 
-    - name: 3. Install Dependencies
-      run: |
-        apt-get update
-        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python openjdk-8-jdk sudo
-        update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          # We need to force Python 2 for Android 7 on modern Ubuntu
+          sudo apt-get install -y python2 python-is-python2
+          
+          # Standard tools from your example
+          sudo apt-get install -y git-core gnupg flex bison gperf build-essential \
+          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
+          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev ccache \
+          libgl1-mesa-dev libxml2-utils xsltproc unzip openjdk-8-jdk
+          
+          # Set Java 8
+          sudo update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-    - name: 4. Setup Repo Tool
-      run: |
-        curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
-        chmod a+x /usr/bin/repo
+      - name: Initialize Repo
+        run: |
+          mkdir aosp && cd aosp
+          git config --global user.name "CI"
+          git config --global user.email "ci@ci.com"
+          
+          # Setup Repo tool
+          curl https://storage.googleapis.com/git-repo-downloads/repo > repo
+          chmod a+x repo
+          sudo mv repo /usr/bin/repo
+          
+          # Init
+          repo init -u $REPO_URL -b $REPO_BRANCH --depth=1
 
-    - name: 5. Initialize & Sync (LineageOS 14.1)
-      run: |
-        mkdir -p /root/android
-        cd /root/android
-        git config --global user.name "CI"
-        git config --global user.email "ci@ci.com"
-        
-        repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
-        
-        # Create Device Manifest
-        mkdir -p .repo/local_manifests
-        echo '<?xml version="1.0" encoding="UTF-8"?>
-        <manifest>
-          <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
-          <project name="j23g/android_kernel_samsung_sc8830" path="kernel/samsung/sc8830" remote="github" revision="cm-14.1" />
-          <project name="j23g/android_vendor_samsung_j23g" path="vendor/samsung/j23g" remote="github" revision="cm-14.1" />
-          <project name="j23g/android_hardware_spreadtrum" path="hardware/spreadtrum" remote="github" revision="cm-14.1" />
-          <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
-        </manifest>' > .repo/local_manifests/roomservice.xml
+      - name: Add J200H Sources (Local Manifest)
+        run: |
+          cd aosp
+          mkdir -p .repo/local_manifests
+          
+          # We create the file here because we are in the cloud
+          echo '<?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
+            <project name="j23g/android_kernel_samsung_sc8830" path="kernel/samsung/sc8830" remote="github" revision="cm-14.1" />
+            <project name="j23g/android_vendor_samsung_j23g" path="vendor/samsung/j23g" remote="github" revision="cm-14.1" />
+            <project name="j23g/android_hardware_spreadtrum" path="hardware/spreadtrum" remote="github" revision="cm-14.1" />
+            <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
+          </manifest>' > .repo/local_manifests/roomservice.xml
 
-        # Sync
-        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+      - name: Sync Source
+        run: |
+          cd aosp
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-    - name: 6. Build
-      run: |
-        cd /root/android
-        . build/envsetup.sh
-        lunch lineage_j23g-userdebug
-        mka bacon
+      - name: Setup environment
+        run: |
+          cd aosp
+          . build/envsetup.sh
+          lunch lineage_$DEVICE-userdebug
 
-    - name: 7. Upload
-      uses: actions/upload-artifact@v4
-      if: success()
-      with:
-        name: J200H_ROM
-        path: /root/android/out/target/product/j23g/*.zip
+      - name: Build ROM
+        run: |
+          cd aosp
+          mka bacon
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        if: success()
+        with:
+          name: J200H_ROM
+          path: aosp/out/target/product/j23g/*.zip
