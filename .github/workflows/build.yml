@@ -1,60 +1,44 @@
-name: Build LineageOS 14.1 for J200H (Direct Method)
+name: J200H Build (Old Linux Environment)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
-    env:
-      # We define the variables here like your example
-      DEVICE: j23g
-      REPO_URL: https://github.com/LineageOS/android.git
-      REPO_BRANCH: cm-14.1
+    runs-on: ubuntu-latest   # Uses the Fast Queue
+    container: ubuntu:18.04  # <--- THIS IS THE KEY. It forces the system to be "Old Linux"
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Clean Disk Space
-        uses: rokibhasansagar/slimhub_actions@main
-
-      - name: Install dependencies
+      - name: 1. Install Old Dependencies
         run: |
-          sudo apt-get update
-          # We need to force Python 2 for Android 7 on modern Ubuntu
-          sudo apt-get install -y python2 python-is-python2
+          apt-get update
+          # On Ubuntu 18.04, 'python' IS python2. No hacks needed.
+          apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python openjdk-8-jdk sudo rsync
           
-          # Standard tools from your example
-          sudo apt-get install -y git-core gnupg flex bison gperf build-essential \
-          zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 \
-          lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev ccache \
-          libgl1-mesa-dev libxml2-utils xsltproc unzip openjdk-8-jdk
-          
-          # Set Java 8
-          sudo update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+          # Ensure Java 8 is selected
+          update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-      - name: Initialize Repo
+      - name: 2. Setup Repo Tool
         run: |
-          mkdir aosp && cd aosp
+          curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
+          chmod a+x /usr/bin/repo
+
+      - name: 3. Initialize Source (LineageOS 14.1)
+        run: |
+          mkdir -p /root/android
+          cd /root/android
           git config --global user.name "CI"
           git config --global user.email "ci@ci.com"
           
-          # Setup Repo tool
-          curl https://storage.googleapis.com/git-repo-downloads/repo > repo
-          chmod a+x repo
-          sudo mv repo /usr/bin/repo
-          
-          # Init
-          repo init -u $REPO_URL -b $REPO_BRANCH --depth=1
+          # Initialize LineageOS (CM 14.1)
+          repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
 
-      - name: Add J200H Sources (Local Manifest)
+      - name: 4. Download J200H Files
         run: |
-          cd aosp
+          cd /root/android
           mkdir -p .repo/local_manifests
           
-          # We create the file here because we are in the cloud
+          # This creates the list of files for your J200H
           echo '<?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
@@ -64,25 +48,23 @@ jobs:
             <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
           </manifest>' > .repo/local_manifests/roomservice.xml
 
-      - name: Sync Source
-        run: |
-          cd aosp
+          # Sync the code (This takes 15-20 mins)
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Setup environment
+      - name: 5. Build ROM
         run: |
-          cd aosp
+          cd /root/android
           . build/envsetup.sh
-          lunch lineage_$DEVICE-userdebug
-
-      - name: Build ROM
-        run: |
-          cd aosp
+          
+          # Prepare J200H
+          lunch lineage_j23g-userdebug
+          
+          # Build
           mka bacon
 
-      - name: Upload artifacts
+      - name: 6. Upload Result
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: J200H_ROM
-          path: aosp/out/target/product/j23g/*.zip
+          path: /root/android/out/target/product/j23g/*.zip
