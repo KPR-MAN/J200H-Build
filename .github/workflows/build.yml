@@ -1,4 +1,4 @@
-name: J200H Build (Fixed Py3)
+name: J200H Build (Space Saver + Docker)
 
 on:
   workflow_dispatch:
@@ -6,60 +6,74 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ubuntu:18.04
 
     steps:
-      - name: 1. Install Dependencies (Both Pythons)
-        run: |
-          apt-get update
-          # We install python (Py2) for the Build, and python3 for the Repo tool
-          apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync
-          
-          # Set Java 8
-          update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+    - name: 1. SUPER CLEAN DISK (Frees 40GB+)
+      run: |
+        # This deletes pre-installed tools we don't need
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        docker image prune --all --force
+        
+        # Check how much space we have now
+        df -h
 
-      - name: 2. Setup Repo Tool
-        run: |
-          curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
-          chmod a+x /usr/bin/repo
+    - name: 2. Run Build Inside Docker
+      run: |
+        # We start Ubuntu 18.04 container, mount the current folder, and run the build script
+        # This gives us the Clean Disk of the Host + The Old Software of the Container
+        
+        docker run --rm -i -v "$GITHUB_WORKSPACE:/root/android" ubuntu:18.04 /bin/bash -c "
+        
+        # --- START OF INSIDE DOCKER ---
+        
+        # Install Tools
+        apt-get update
+        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync
+        
+        # Set Java 8
+        update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-      - name: 3. Initialize Source
-        run: |
-          mkdir -p /root/android
-          cd /root/android
-          git config --global user.name "CI"
-          git config --global user.email "ci@ci.com"
-          
-          # Initialize LineageOS 14.1
-          repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
+        # Setup Repo Tool
+        curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
+        chmod a+x /usr/bin/repo
 
-      - name: 4. Download J200H Files
-        run: |
-          cd /root/android
-          mkdir -p .repo/local_manifests
-          
-          echo '<?xml version="1.0" encoding="UTF-8"?>
-          <manifest>
-            <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
-            <project name="j23g/android_kernel_samsung_sc8830" path="kernel/samsung/sc8830" remote="github" revision="cm-14.1" />
-            <project name="j23g/android_vendor_samsung_j23g" path="vendor/samsung/j23g" remote="github" revision="cm-14.1" />
-            <project name="j23g/android_hardware_spreadtrum" path="hardware/spreadtrum" remote="github" revision="cm-14.1" />
-            <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
-          </manifest>' > .repo/local_manifests/roomservice.xml
+        # Setup Workspace
+        cd /root/android
+        git config --global user.name 'CI'
+        git config --global user.email 'ci@ci.com'
 
-          # Sync
-          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+        # Init LineageOS 14.1
+        repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
+        
+        # Create Device List
+        mkdir -p .repo/local_manifests
+        echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+        <manifest>
+          <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/sc8830\" remote=\"github\" revision=\"cm-14.1\" />
+          <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" revision=\"cm-14.1\" />
+          <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
+        </manifest>' > .repo/local_manifests/roomservice.xml
 
-      - name: 5. Build ROM
-        run: |
-          cd /root/android
-          . build/envsetup.sh
-          lunch lineage_j23g-userdebug
-          mka bacon
+        # Sync (Download)
+        repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: 6. Upload
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: J200H_ROM
-          path: /root/android/out/target/product/j23g/*.zip
+        # Build
+        source build/envsetup.sh
+        lunch lineage_j23g-userdebug
+        mka bacon
+        
+        # --- END OF INSIDE DOCKER ---
+        "
+
+    - name: 3. Upload Result
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: J200H_ROM
+        # The path is different now because of how we mounted the volume
+        path: out/target/product/j23g/*.zip
