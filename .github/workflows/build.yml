@@ -1,56 +1,64 @@
-name: Build J200H (Fast Lane 22.04)
+name: J200H Final Build
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # <--- This is the fast queue!
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
 
     steps:
-    - name: 1. Checkout
-      uses: actions/checkout@v2
+    - name: 1. Checkout Code
+      uses: actions/checkout@v4
 
-    - name: 2. Clean Disk (Make Space)
+    - name: 2. Clean Disk
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: 3. Install Old Tools (Fix for Android 7)
+    - name: 3. Install Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y bc build-essential zip curl libstdc++6 git wget gcc clang libssl-dev repo rsync flex bison openjdk-8-jdk
-        
-        # Install Python 2 (Required for old Android)
-        sudo apt-get install -y python2
-        sudo ln -s /usr/bin/python2 /usr/bin/python
-        
-        # Install ncurses5 (Required for old Android)
-        sudo apt-get install -y libncurses5 libncurses5-dev
+        apt-get update
+        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python openjdk-8-jdk sudo
+        update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-    - name: 4. Initialize Source
+    - name: 4. Setup Repo Tool
       run: |
-        mkdir ~/android
-        cd ~/android
+        curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
+        chmod a+x /usr/bin/repo
+
+    - name: 5. Initialize & Sync (LineageOS 14.1)
+      run: |
+        mkdir -p /root/android
+        cd /root/android
         git config --global user.name "CI"
         git config --global user.email "ci@ci.com"
+        
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
-
-    - name: 5. Download Device Files
-      run: |
-        cd ~/android
+        
+        # Create Device Manifest
         mkdir -p .repo/local_manifests
-        cp $GITHUB_WORKSPACE/.repo/local_manifests/roomservice.xml .repo/local_manifests/
+        echo '<?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
+          <project name="j23g/android_kernel_samsung_sc8830" path="kernel/samsung/sc8830" remote="github" revision="cm-14.1" />
+          <project name="j23g/android_vendor_samsung_j23g" path="vendor/samsung/j23g" remote="github" revision="cm-14.1" />
+          <project name="j23g/android_hardware_spreadtrum" path="hardware/spreadtrum" remote="github" revision="cm-14.1" />
+          <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
+        </manifest>' > .repo/local_manifests/roomservice.xml
+
+        # Sync
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
     - name: 6. Build
       run: |
-        cd ~/android
+        cd /root/android
         . build/envsetup.sh
         lunch lineage_j23g-userdebug
         mka bacon
 
     - name: 7. Upload
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       if: success()
       with:
         name: J200H_ROM
-        path: ~/android/out/target/product/j23g/*.zip
+        path: /root/android/out/target/product/j23g/*.zip
