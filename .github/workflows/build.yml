@@ -1,4 +1,4 @@
-name: J200H Build (Add SCX30G2 Common)
+name: J200H Build (Add SPRD Common)
 
 on:
   workflow_dispatch:
@@ -40,26 +40,29 @@ jobs:
 
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
         
-        # 5. Create Manifest
+        # 5. Create Manifest (INCLUDES ALL COMMON TREES)
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
-          <!-- Device Tree -->
+          <!-- 1. Main Device Tree -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- MISSING DEPENDENCY FROM LOGS (scx30g2) -->
+          <!-- 2. Chipset Specific Common (Requested last time) -->
           <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
 
-          <!-- Also keeping scx35 just in case it needs both -->
+          <!-- 3. Platform Common (THE NEW MISSING PIECE) -->
+          <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
+
+          <!-- 4. Alternative Common (Keeping just in case) -->
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
 
-          <!-- Kernel -->
+          <!-- 5. Kernel -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/sc8830\" remote=\"github\" />
           
-          <!-- Vendor -->
+          <!-- 6. Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- Hardware -->
+          <!-- 7. Hardware -->
           <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
