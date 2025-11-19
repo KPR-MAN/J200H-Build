@@ -1,21 +1,21 @@
-name: J200H Build (Old Linux Environment)
+name: J200H Build (Fixed Py3)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # Uses the Fast Queue
-    container: ubuntu:18.04  # <--- THIS IS THE KEY. It forces the system to be "Old Linux"
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
 
     steps:
-      - name: 1. Install Old Dependencies
+      - name: 1. Install Dependencies (Both Pythons)
         run: |
           apt-get update
-          # On Ubuntu 18.04, 'python' IS python2. No hacks needed.
-          apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python openjdk-8-jdk sudo rsync
+          # We install python (Py2) for the Build, and python3 for the Repo tool
+          apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync
           
-          # Ensure Java 8 is selected
+          # Set Java 8
           update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
       - name: 2. Setup Repo Tool
@@ -23,14 +23,14 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
           chmod a+x /usr/bin/repo
 
-      - name: 3. Initialize Source (LineageOS 14.1)
+      - name: 3. Initialize Source
         run: |
           mkdir -p /root/android
           cd /root/android
           git config --global user.name "CI"
           git config --global user.email "ci@ci.com"
           
-          # Initialize LineageOS (CM 14.1)
+          # Initialize LineageOS 14.1
           repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
 
       - name: 4. Download J200H Files
@@ -38,7 +38,6 @@ jobs:
           cd /root/android
           mkdir -p .repo/local_manifests
           
-          # This creates the list of files for your J200H
           echo '<?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <project name="j23g/android_device_samsung_j23g" path="device/samsung/j23g" remote="github" revision="cm-14.1" />
@@ -48,21 +47,17 @@ jobs:
             <project name="LineageOS/android_hardware_samsung" path="hardware/samsung" remote="github" revision="cm-14.1" />
           </manifest>' > .repo/local_manifests/roomservice.xml
 
-          # Sync the code (This takes 15-20 mins)
+          # Sync
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
       - name: 5. Build ROM
         run: |
           cd /root/android
           . build/envsetup.sh
-          
-          # Prepare J200H
           lunch lineage_j23g-userdebug
-          
-          # Build
           mka bacon
 
-      - name: 6. Upload Result
+      - name: 6. Upload
         uses: actions/upload-artifact@v4
         if: success()
         with:
