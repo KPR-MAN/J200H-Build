@@ -1,4 +1,4 @@
-name: J200H Build (Search and Destroy)
+name: J200H Build (User Fork Edition)
 
 on:
   workflow_dispatch:
@@ -40,11 +40,17 @@ jobs:
 
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
         
-        # 5. Create Manifest
+        # 5. Create Manifest (Now points to YOUR USERNAME)
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
-          <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          <!-- 
+              This downloads the code YOU just edited. 
+              ${{ github.actor }} automatically puts your username here.
+          -->
+          <project name=\"${{ github.actor }}/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          
+          <!-- Dependencies -->
           <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
@@ -52,7 +58,10 @@ jobs:
           <!-- Kernel -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/j23g\" remote=\"github\" />
           
+          <!-- Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          
+          <!-- Hardware -->
           <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
@@ -60,36 +69,7 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-        # -------------------------------------------------------
-        # 7. THE FIX: SEARCH AND DESTROY
-        # -------------------------------------------------------
-        echo 'Hunting down TARGET_PREBUILT_KERNEL in all folders...'
-        
-        # This command finds ANY file containing 'TARGET_PREBUILT_KERNEL' in device/samsung 
-        # and puts a '#' symbol in front of it (disabling it).
-        grep -rl \"TARGET_PREBUILT_KERNEL\" device/samsung/ | xargs sed -i 's/TARGET_PREBUILT_KERNEL/# TARGET_PREBUILT_KERNEL/g'
-        
-        echo 'Prebuilt settings disabled. Applying Source Config...'
-
-        # Force correct config in the main BoardConfig
-        BC_FILE='device/samsung/j23g/BoardConfig.mk'
-        
-        # Find Config Name
-        K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*_defconfig' | head -n 1)
-        if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
-        
-        echo '' >> \$BC_FILE
-        echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> \$BC_FILE
-        echo \"TARGET_KERNEL_CONFIG := \$K_CONFIG\" >> \$BC_FILE
-        echo 'TARGET_KERNEL_ARCH := arm' >> \$BC_FILE
-        echo 'TARGET_KERNEL_HEADER_ARCH := arm' >> \$BC_FILE
-        echo 'BOARD_KERNEL_IMAGE_NAME := zImage' >> \$BC_FILE
-        
-        # Print the file so we can check it in logs if it fails
-        cat \$BC_FILE
-        # -------------------------------------------------------
-
-        # 8. Build
+        # 7. Build
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         mka bacon
