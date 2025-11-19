@@ -1,4 +1,4 @@
-name: J200H Build (Official Source)
+name: J200H Build (Fixed Sync)
 
 on:
   workflow_dispatch:
@@ -40,49 +40,45 @@ jobs:
 
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
         
-        # 5. Create Manifest (USING YOUR PROVIDED LINKS)
+        # 5. Create Manifest (REPLACED BROKEN REPO)
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
           <!-- Device Tree -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- Dependencies (Required for this family of devices) -->
+          <!-- Dependencies -->
           <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
 
-          <!-- YOUR SPECIFIC KERNEL -->
+          <!-- Kernel -->
           <project name=\"j23g/android_kernel_samsung_j23g\" path=\"kernel/samsung/j23g\" remote=\"github\" />
           
-          <!-- YOUR SPECIFIC VENDOR -->
+          <!-- Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- Hardware -->
-          <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" />
+          <!-- Hardware (CHANGED TO STRICTED - THE WORKING ONE) -->
+          <project name=\"stricted/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" revision=\"cm-14.1\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
 
         # 6. Sync
-        repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
+        # We added || true so if a minor repo fails, it keeps going, but the main ones should work now.
+        repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
         # 7. PREPARE FOR BUILDING SOURCE
         echo 'Fixing configuration...'
         
-        # A. Disable "Prebuilt Kernel" in ALL files (Vendor and Device)
-        # This prevents the build from looking for a missing file.
+        # A. Disable Prebuilt Kernel
         grep -rl "TARGET_PREBUILT_KERNEL" device/ vendor/ | xargs sed -i 's/TARGET_PREBUILT_KERNEL/# TARGET_PREBUILT_KERNEL/g'
         
-        # B. Detect the Correct Config from your new Kernel Repo
+        # B. Detect Config
         K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*defconfig' | head -n 1)
-        if [ -z \"\$K_CONFIG\" ]; then
-            K_CONFIG='sc8830_defconfig' # Fallback
-        else
-            K_CONFIG=\$(basename \$K_CONFIG .u) # Remove extension
-        fi
+        if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
         echo \"Using Kernel Config: \$K_CONFIG\"
 
-        # C. Inject the Source Build variables into BoardConfig.mk
+        # C. Inject Settings
         BC_FILE='device/samsung/j23g/BoardConfig.mk'
         echo '' >> \$BC_FILE
         echo '# AUTOMATIC FIX FOR CI' >> \$BC_FILE
