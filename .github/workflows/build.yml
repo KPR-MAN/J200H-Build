@@ -1,4 +1,4 @@
-name: J200H Build (Fix Dependencies)
+name: J200H Build (Add SCX30G2 Common)
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: 1. SUPER CLEAN DISK (Frees 40GB+)
+    - name: 1. SUPER CLEAN DISK
       run: |
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
@@ -38,33 +38,33 @@ jobs:
         git config --global user.name 'CI'
         git config --global user.email 'ci@ci.com'
 
-        # Init LineageOS 14.1
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
         
-        # 5. Create Manifest (FIXED: Added scx35-common + Removed strict branches)
+        # 5. Create Manifest
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
           <!-- Device Tree -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- THE MISSING FILE (Fixes common.mk error) -->
+          <!-- MISSING DEPENDENCY FROM LOGS (scx30g2) -->
+          <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
+
+          <!-- Also keeping scx35 just in case it needs both -->
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
 
-          <!-- Kernel (Removed revision to fix sync error) -->
+          <!-- Kernel -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/sc8830\" remote=\"github\" />
           
           <!-- Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- Hardware Spreadtrum (Removed revision to fix sync error) -->
+          <!-- Hardware -->
           <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" />
-          
-          <!-- Samsung Hardware -->
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
 
-        # 6. Sync (Added force-broken to try and skip minor errors)
+        # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
         # 7. Build
