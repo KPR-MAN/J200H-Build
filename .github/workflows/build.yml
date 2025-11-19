@@ -1,4 +1,4 @@
-name: J200H Build (Space Saver + Docker)
+name: J200H Build (Fixed Missing Common)
 
 on:
   workflow_dispatch:
@@ -10,64 +10,64 @@ jobs:
     steps:
     - name: 1. SUPER CLEAN DISK (Frees 40GB+)
       run: |
-        # This deletes pre-installed tools we don't need
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
         docker image prune --all --force
-        
-        # Check how much space we have now
-        df -h
 
     - name: 2. Run Build Inside Docker
       run: |
-        # We start Ubuntu 18.04 container, mount the current folder, and run the build script
-        # This gives us the Clean Disk of the Host + The Old Software of the Container
-        
         docker run --rm -i -v "$GITHUB_WORKSPACE:/root/android" ubuntu:18.04 /bin/bash -c "
         
-        # --- START OF INSIDE DOCKER ---
+        # --- INSIDE DOCKER START ---
         
-        # Install Tools
+        # 1. Install Tools (Added schedtool)
         apt-get update
-        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync
+        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync schedtool
         
-        # Set Java 8
+        # 2. Fix Java
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-        # Setup Repo Tool
+        # 3. Setup Repo
         curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
         chmod a+x /usr/bin/repo
 
-        # Setup Workspace
+        # 4. Setup Workspace
         cd /root/android
         git config --global user.name 'CI'
         git config --global user.email 'ci@ci.com'
 
-        # Init LineageOS 14.1
         repo init -u https://github.com/LineageOS/android.git -b cm-14.1 --depth=1
         
-        # Create Device List
+        # 5. Create Manifest (ADDED THE MISSING DEPENDENCY)
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
+          <!-- Device Tree -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          
+          <!-- MISSING PART ADDED HERE -->
+          <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" revision=\"cm-14.1\" />
+
+          <!-- Kernel & Vendor -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/sc8830\" remote=\"github\" revision=\"cm-14.1\" />
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
+          
+          <!-- Hardware -->
           <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" revision=\"cm-14.1\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
 
-        # Sync (Download)
+        # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-        # Build
+        # 7. Build
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         mka bacon
         
-        # --- END OF INSIDE DOCKER ---
+        # --- INSIDE DOCKER END ---
         "
 
     - name: 3. Upload Result
@@ -75,5 +75,4 @@ jobs:
       if: success()
       with:
         name: J200H_ROM
-        # The path is different now because of how we mounted the volume
         path: out/target/product/j23g/*.zip
