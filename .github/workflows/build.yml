@@ -1,4 +1,4 @@
-name: J200H Build (Kernel Surgery)
+name: J200H Build (Search and Destroy)
 
 on:
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
           <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
 
-          <!-- Kernel path set to j23g -->
+          <!-- Kernel -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/j23g\" remote=\"github\" />
           
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
@@ -61,33 +61,32 @@ jobs:
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
         # -------------------------------------------------------
-        # 7. SURGERY: Remove Prebuilt Logic & Force Source
+        # 7. THE FIX: SEARCH AND DESTROY
         # -------------------------------------------------------
-        echo 'Performing BoardConfig Surgery...'
+        echo 'Hunting down TARGET_PREBUILT_KERNEL in all folders...'
+        
+        # This command finds ANY file containing 'TARGET_PREBUILT_KERNEL' in device/samsung 
+        # and puts a '#' symbol in front of it (disabling it).
+        grep -rl \"TARGET_PREBUILT_KERNEL\" device/samsung/ | xargs sed -i 's/TARGET_PREBUILT_KERNEL/# TARGET_PREBUILT_KERNEL/g'
+        
+        echo 'Prebuilt settings disabled. Applying Source Config...'
+
+        # Force correct config in the main BoardConfig
         BC_FILE='device/samsung/j23g/BoardConfig.mk'
         
-        # Delete any line that tries to use a prebuilt kernel
-        sed -i '/TARGET_PREBUILT_KERNEL/d' \$BC_FILE
-        sed -i '/BOARD_KERNEL_CMDLINE/d' \$BC_FILE
-        
-        # Try to find the correct defconfig file
+        # Find Config Name
         K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*_defconfig' | head -n 1)
-        if [ -z \"\$K_CONFIG\" ]; then
-             K_CONFIG='sc8830_defconfig' # Fallback
-        else
-             K_CONFIG=\$(basename \$K_CONFIG .u) # Clean filename
-        fi
+        if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
         
-        echo \"Using Config: \$K_CONFIG\"
-
-        # Inject correct variables to the END of the file
         echo '' >> \$BC_FILE
-        echo '# FORCE KERNEL BUILD' >> \$BC_FILE
         echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> \$BC_FILE
         echo \"TARGET_KERNEL_CONFIG := \$K_CONFIG\" >> \$BC_FILE
         echo 'TARGET_KERNEL_ARCH := arm' >> \$BC_FILE
         echo 'TARGET_KERNEL_HEADER_ARCH := arm' >> \$BC_FILE
         echo 'BOARD_KERNEL_IMAGE_NAME := zImage' >> \$BC_FILE
+        
+        # Print the file so we can check it in logs if it fails
+        cat \$BC_FILE
         # -------------------------------------------------------
 
         # 8. Build
