@@ -1,4 +1,4 @@
-name: J200H Build (Fix Kernel Path)
+name: J200H Build (Force Kernel Source)
 
 on:
   workflow_dispatch:
@@ -44,21 +44,15 @@ jobs:
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
-          <!-- Device Tree -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
-          
-          <!-- Common Trees -->
           <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
 
-          <!-- Kernel (CHANGED PATH TO j23g) -->
+          <!-- Kernel path set to j23g to match our fix below -->
           <project name=\"j23g/android_kernel_samsung_sc8830\" path=\"kernel/samsung/j23g\" remote=\"github\" />
           
-          <!-- Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
-          
-          <!-- Hardware -->
           <project name=\"j23g/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
@@ -66,7 +60,31 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-        # 7. Build
+        # -------------------------------------------------------
+        # 7. THE FIX: Force Kernel Source Configuration
+        # -------------------------------------------------------
+        echo 'Applying Kernel Fixes...'
+        
+        # Attempt to find the config name automatically
+        K_CONFIG=\$(ls kernel/samsung/j23g/arch/arm/configs/ | grep -i 'j23g' | head -n 1)
+        if [ -z \"\$K_CONFIG\" ]; then
+             # Fallback if no j23g config found
+             K_CONFIG='sc8830_defconfig'
+        fi
+        # Remove the .file extension if present (though usually it is just the name)
+        K_CONFIG=\${K_CONFIG%.*}
+        
+        echo \"Detected Kernel Config: \$K_CONFIG\"
+        
+        # Append the settings to BoardConfig.mk so the build system uses them
+        echo '' >> device/samsung/j23g/BoardConfig.mk
+        echo '# MANUAL FIX FOR CI BUILD' >> device/samsung/j23g/BoardConfig.mk
+        echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> device/samsung/j23g/BoardConfig.mk
+        echo \"TARGET_KERNEL_CONFIG := \$K_CONFIG\" >> device/samsung/j23g/BoardConfig.mk
+        
+        # -------------------------------------------------------
+
+        # 8. Build
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         mka bacon
