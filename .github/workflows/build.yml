@@ -1,4 +1,4 @@
-name: J200H Build (Fix Jack SSL)
+name: J200H Build (Fix Jack User)
 
 on:
   workflow_dispatch:
@@ -31,16 +31,17 @@ jobs:
         apt-get update
         apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync schedtool imagemagick bc
         
-        # 2. Fix Java
+        # 2. Fix Java & Environment
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
         
-        # --- NEW FIX: ENABLE OLD SSL PROTOCOLS FOR JACK ---
-        echo 'Patching Java Security...'
+        # FIX: SET THE USER VARIABLE FOR JACK
+        export USER=\$(whoami)
+        echo \"Current User: \$USER\"
+        
+        # Fix SSL
         J_SEC_FILE='/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/security/java.security'
-        # Remove TLSv1 and TLSv1.1 from the disabled list so Jack can use them
         sed -i 's/TLSv1, TLSv1.1,//g' \$J_SEC_FILE
         sed -i 's/SSLv3,//g' \$J_SEC_FILE
-        # --------------------------------------------------
 
         # 3. Setup Repo
         curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo
@@ -70,29 +71,21 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
-        # 7. DELETE REPO HISTORY (Space Saver)
+        # 7. DELETE REPO HISTORY
         rm -rf .repo
         
-        # 8. APPLY PREVIOUS FIXES
-        
-        # Kernel Source Fixes
+        # 8. APPLY FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
         find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
         echo 'KBUILD_CFLAGS += -w' >> kernel/samsung/j23g/Makefile
         echo 'KBUILD_CFLAGS += -Wno-error' >> kernel/samsung/j23g/Makefile
         echo 'KBUILD_CFLAGS += -Wno-int-conversion' >> kernel/samsung/j23g/Makefile
         echo 'KBUILD_CFLAGS += -Wno-incompatible-pointer-types' >> kernel/samsung/j23g/Makefile
-
-        # Jack Memory Fix
-        export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
-        
-        # Prebuilt Kernel Removal
         grep -rl "TARGET_PREBUILT_KERNEL" device/ vendor/ | xargs sed -i 's/TARGET_PREBUILT_KERNEL/# TARGET_PREBUILT_KERNEL/g'
         
-        # Config & Variables
+        # Config
         K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*defconfig' | head -n 1)
         if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
-        
         BC_FILE='device/samsung/j23g/BoardConfig.mk'
         echo '' >> \$BC_FILE
         echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> \$BC_FILE
@@ -105,7 +98,9 @@ jobs:
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         
-        # Restart Jack once manually to apply settings
+        # Jack Setup
+        export USER=\$(whoami)
+        export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         ./prebuilts/sdk/tools/jack-admin kill-server
         ./prebuilts/sdk/tools/jack-admin start-server
         
