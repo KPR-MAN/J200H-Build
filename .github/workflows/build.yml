@@ -1,4 +1,4 @@
-name: J200H Build (Brute Force)
+name: J200H Build (Add BC Tool)
 
 on:
   workflow_dispatch:
@@ -22,9 +22,9 @@ jobs:
         
         # --- INSIDE DOCKER START ---
         
-        # 1. Install Tools
+        # 1. Install Tools (ADDED bc HERE)
         apt-get update
-        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync schedtool imagemagick
+        apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip python python3 openjdk-8-jdk sudo rsync schedtool imagemagick bc
         
         # 2. Fix Java
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
@@ -64,19 +64,17 @@ jobs:
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
         # -------------------------------------------------------
-        # 7. THE BRUTE FORCE FIXES
+        # 7. FIXES
         # -------------------------------------------------------
-        echo 'Applying Aggressive Kernel Patches...'
+        echo 'Applying All Fixes...'
 
-        # A. Fix the specific 'usb_hw.c' return error
+        # A. Fix usb_hw.c
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
 
-        # B. Remove -Werror from EVERY single Makefile in the kernel
-        # This prevents 'Warnings' from stopping the build.
+        # B. Remove -Werror from makefiles
         find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
 
         # C. Inject Global Flags to Ignore Everything
-        # We add flags to the MAIN kernel Makefile to turn off all checks.
         echo 'KBUILD_CFLAGS += -w' >> kernel/samsung/j23g/Makefile
         echo 'KBUILD_CFLAGS += -Wno-error' >> kernel/samsung/j23g/Makefile
         echo 'KBUILD_CFLAGS += -Wno-int-conversion' >> kernel/samsung/j23g/Makefile
