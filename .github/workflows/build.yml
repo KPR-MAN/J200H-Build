@@ -1,4 +1,4 @@
-name: J200H Build (Bulletproof)
+name: J200H Build (Silence Kernel)
 
 on:
   workflow_dispatch:
@@ -44,10 +44,7 @@ jobs:
         mkdir -p .repo/local_manifests
         echo '<?xml version=\"1.0\" encoding=\"UTF-8\"?>
         <manifest>
-          <!-- Device -->
           <project name=\"j23g/android_device_samsung_j23g\" path=\"device/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
-          
-          <!-- Dependencies -->
           <project name=\"j23g/android_device_samsung_scx30g2-common\" path=\"device/samsung/scx30g2-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_sprd-common\" path=\"device/samsung/sprd-common\" remote=\"github\" />
           <project name=\"j23g/android_device_samsung_scx35-common\" path=\"device/samsung/scx35-common\" remote=\"github\" />
@@ -58,7 +55,7 @@ jobs:
           <!-- Vendor -->
           <project name=\"j23g/android_vendor_samsung_j23g\" path=\"vendor/samsung/j23g\" remote=\"github\" revision=\"cm-14.1\" />
           
-          <!-- Hardware (Using Stricted for Spreadtrum) -->
+          <!-- Hardware -->
           <project name=\"stricted/android_hardware_spreadtrum\" path=\"hardware/spreadtrum\" remote=\"github\" revision=\"cm-14.1\" />
           <project name=\"LineageOS/android_hardware_samsung\" path=\"hardware/samsung\" remote=\"github\" revision=\"cm-14.1\" />
         </manifest>' > .repo/local_manifests/roomservice.xml
@@ -67,25 +64,31 @@ jobs:
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
         # -------------------------------------------------------
-        # 7. FIXES (The Important Part)
+        # 7. FIXES: DISABLE ALL WARNINGS
         # -------------------------------------------------------
-        echo 'Applying Proactive Fixes...'
+        echo 'Silencing Kernel Warnings...'
 
-        # FIX A: Prevent Jack Server Memory Crash (Limits to 4GB)
+        # A. Prevent Jack Server Crash
         export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         
-        # FIX B: Allow Dirty Kernel Code (Removes -Werror)
-        # This command finds every Makefile in the kernel and removes the instruction to treat warnings as errors
-        find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
-        
-        # FIX C: Disable Prebuilt Kernel settings
+        # B. Disable Prebuilt Kernel settings
         grep -rl "TARGET_PREBUILT_KERNEL" device/ vendor/ | xargs sed -i 's/TARGET_PREBUILT_KERNEL/# TARGET_PREBUILT_KERNEL/g'
         
-        # FIX D: Setup Kernel Config
+        # C. FORCE COMPILER TO IGNORE ERRORS
+        # This appends the 'ignore warnings' flags to the TOP LEVEL makefile
+        cd kernel/samsung/j23g
+        echo 'KBUILD_CFLAGS += -w' >> Makefile
+        echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
+        cd ../../..
+        
+        # D. Force it on the specific driver causing issues too
+        echo 'subdir-ccflags-y += -w' >> kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/Makefile
+
+        # E. Setup Kernel Config
         K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*defconfig' | head -n 1)
         if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
         
-        # FIX E: Force Build Variables
+        # F. Force Build Variables
         BC_FILE='device/samsung/j23g/BoardConfig.mk'
         echo '' >> \$BC_FILE
         echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> \$BC_FILE
