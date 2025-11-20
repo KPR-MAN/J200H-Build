@@ -1,4 +1,4 @@
-name: J200H Build (Max Space)
+name: J200H Build (Low Storage Mode)
 
 on:
   workflow_dispatch:
@@ -10,24 +10,18 @@ jobs:
     steps:
     - name: 1. EXTREME CLEANUP (Host)
       run: |
-        # 1. Remove pre-installed heavy tools
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
         sudo rm -rf /usr/share/swift
         sudo rm -rf /usr/local/.ghcup
         sudo rm -rf /usr/lib/jvm
-        
-        # 2. Remove Docker Images
-        sudo docker image prune --all --force
-        
-        # 3. DISABLE AND REMOVE SWAP (Frees ~4GB Disk Space)
+        # Remove Swap
         sudo swapoff -a
         sudo rm -f /mnt/swapfile
         sudo rm -f /swapfile
-        
-        echo "Disk Space Available:"
         df -h
 
     - name: 2. Run Build Inside Docker
@@ -44,7 +38,7 @@ jobs:
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
         export USER=\$(whoami)
         
-        # Fix SSL
+        # Fix SSL for Jack
         J_SEC_FILE='/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/security/java.security'
         sed -i 's/TLSv1, TLSv1.1,//g' \$J_SEC_FILE
         sed -i 's/SSLv3,//g' \$J_SEC_FILE
@@ -78,17 +72,25 @@ jobs:
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
         # -------------------------------------------------------
-        # 7. STORAGE HACKS (The Critical Part)
+        # 7. MASSIVE STORAGE CLEANUP
         # -------------------------------------------------------
-        echo 'Deleting heavy files to save space...'
+        echo 'Cleaning Source Code...'
         
-        # Delete history
+        # Delete Git History
         rm -rf .repo
         
-        # Delete unused Prebuilts (Mac/Windows tools) - Saves ~2GB
+        # Delete Unused Prebuilts
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
         rm -rf prebuilts/gcc/darwin-x86
+        
+        # Delete Test Suites & Emulator (Saves ~3GB)
+        rm -rf cts
+        rm -rf development/samples
+        rm -rf development/tutorials
+        rm -rf prebuilts/android-emulator
+        rm -rf prebuilts/qemu-kernel
+        rm -rf device/generic
         
         # 8. APPLY CODE FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
@@ -117,6 +119,10 @@ jobs:
         export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         ./prebuilts/sdk/tools/jack-admin kill-server
         ./prebuilts/sdk/tools/jack-admin start-server
+        
+        # DISABLE DEXPREOPT TO SAVE SPACE
+        export WITH_DEXPREOPT=false
+        export USE_CCACHE=0
         
         make -j2 bacon
         
