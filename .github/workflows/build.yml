@@ -1,4 +1,4 @@
-name: J200H Build (Split & Clean)
+name: J200H Build (Checkpoint Strategy)
 
 on:
   workflow_dispatch:
@@ -61,14 +61,15 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
-        # 7. CLEAN SOURCE
+        # 7. STORAGE PURGE
         rm -rf .repo
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
         rm -rf prebuilts/gcc/darwin-x86
         rm -rf cts development/samples development/tutorials
+        find . -name \".git\" -type d -exec rm -rf {} +
         
-        # 8. APPLY FIXES
+        # 8. CODE FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
         find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
         echo 'KBUILD_CFLAGS += -w' >> kernel/samsung/j23g/Makefile
@@ -79,7 +80,6 @@ jobs:
         
         K_CONFIG=\$(find kernel/samsung/j23g/arch/arm/configs/ -name '*j23g*defconfig' | head -n 1)
         if [ -z \"\$K_CONFIG\" ]; then K_CONFIG='sc8830_defconfig'; else K_CONFIG=\$(basename \$K_CONFIG .u); fi
-        
         BC_FILE='device/samsung/j23g/BoardConfig.mk'
         echo '' >> \$BC_FILE
         echo 'TARGET_KERNEL_SOURCE := kernel/samsung/j23g' >> \$BC_FILE
@@ -88,7 +88,7 @@ jobs:
         echo 'TARGET_KERNEL_HEADER_ARCH := arm' >> \$BC_FILE
         echo 'BOARD_KERNEL_IMAGE_NAME := zImage' >> \$BC_FILE
         
-        # 9. BUILD PHASE 1: KERNEL ONLY
+        # 9. BUILD PHASE 1: SYSTEM (Heaviest Part)
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         
@@ -100,16 +100,21 @@ jobs:
         export USE_CCACHE=0
         export CCACHE_DISABLE=true
         
-        echo '--- Building Bootimage (Kernel) ---'
-        make -j2 bootimage
+        echo '--- Building System Partition (Step 1/2) ---'
+        make -j2 systemimage
         
-        # 10. INTERMEDIATE CLEANUP
-        echo '--- Cleaning Kernel Objects to Free Space ---'
-        rm -rf out/target/product/j23g/obj/KERNEL_OBJ
+        # 10. MASSIVE CLEANUP (The Checkpoint)
+        # We delete the compiled objects for Apps and Frameworks.
+        # We keep the resulting 'system.img' and installed files.
+        echo '--- Purging Intermediate Files ---'
+        rm -rf out/target/common/obj/APPS
+        rm -rf out/target/common/obj/JAVA_LIBRARIES
+        rm -rf out/target/common/obj/ETC
         rm -rf out/target/product/j23g/obj/STATIC_LIBRARIES
+        rm -rf out/host/linux-x86/obj
         
-        # 11. BUILD PHASE 2: ROM
-        echo '--- Building ROM (Bacon) ---'
+        # 11. BUILD PHASE 2: FINISH (Package ZIP)
+        echo '--- Building Final ZIP (Step 2/2) ---'
         make -j2 bacon
         
         # --- INSIDE DOCKER END ---
