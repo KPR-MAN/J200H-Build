@@ -1,4 +1,4 @@
-name: J200H Build (No Cache Edition)
+name: J200H Build (Space Saver + Auto Clean)
 
 on:
   workflow_dispatch:
@@ -10,18 +10,10 @@ jobs:
     steps:
     - name: 1. EXTREME CLEANUP (Host)
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/.ghcup /usr/lib/jvm
         sudo docker image prune --all --force
-        sudo rm -rf /usr/share/swift
-        sudo rm -rf /usr/local/.ghcup
-        sudo rm -rf /usr/lib/jvm
-        # Remove Swap
         sudo swapoff -a
-        sudo rm -f /mnt/swapfile
-        sudo rm -f /swapfile
+        sudo rm -f /mnt/swapfile /swapfile
         df -h
 
     - name: 2. Run Build Inside Docker
@@ -37,8 +29,6 @@ jobs:
         # 2. Fix Java & Env
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
         export USER=\$(whoami)
-        
-        # Fix SSL
         J_SEC_FILE='/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/security/java.security'
         sed -i 's/TLSv1, TLSv1.1,//g' \$J_SEC_FILE
         sed -i 's/SSLv3,//g' \$J_SEC_FILE
@@ -71,20 +61,15 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
-        # -------------------------------------------------------
-        # 7. DEEP CLEANUP
-        # -------------------------------------------------------
-        echo 'Cleaning Storage...'
+        # 7. CLEAN STORAGE
         rm -rf .repo
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
         rm -rf prebuilts/gcc/darwin-x86
         rm -rf cts development/samples development/tutorials
-        
-        # DEEP GIT CLEAN: Find any remaining .git folders and delete them
         find . -name \".git\" -type d -exec rm -rf {} +
         
-        # 8. APPLY CODE FIXES
+        # 8. APPLY FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
         find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
         echo 'KBUILD_CFLAGS += -w' >> kernel/samsung/j23g/Makefile
@@ -108,16 +93,28 @@ jobs:
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         
-        # Restart Jack
         export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         ./prebuilts/sdk/tools/jack-admin kill-server
         ./prebuilts/sdk/tools/jack-admin start-server
         
-        # --- CRITICAL SETTINGS ---
         export WITH_DEXPREOPT=false
         export USE_CCACHE=0
         export CCACHE_DISABLE=true
         
+        # --- BACKGROUND CLEANER START ---
+        # This loop runs every 3 minutes to delete intermediate files
+        (
+            while true; do
+                sleep 180
+                echo 'Background Cleaning...'
+                rm -rf out/target/common/obj/JAVA_LIBRARIES/framework_intermediates
+                rm -rf out/target/common/obj/APPS/SystemUI_intermediates
+                rm -rf out/target/common/docs
+                rm -rf out/host/linux-x86/obj/STATIC_LIBRARIES
+            done
+        ) &
+        # --- BACKGROUND CLEANER END ---
+
         make -j2 bacon
         
         # --- INSIDE DOCKER END ---
