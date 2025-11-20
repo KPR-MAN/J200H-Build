@@ -1,4 +1,4 @@
-name: J200H Build (Low Storage Mode)
+name: J200H Build (No Cache Edition)
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
         update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
         export USER=\$(whoami)
         
-        # Fix SSL for Jack
+        # Fix SSL
         J_SEC_FILE='/usr/lib/jvm/java-8-openjdk-amd64/jre/lib/security/java.security'
         sed -i 's/TLSv1, TLSv1.1,//g' \$J_SEC_FILE
         sed -i 's/SSLv3,//g' \$J_SEC_FILE
@@ -72,25 +72,17 @@ jobs:
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
         # -------------------------------------------------------
-        # 7. MASSIVE STORAGE CLEANUP
+        # 7. DEEP CLEANUP
         # -------------------------------------------------------
-        echo 'Cleaning Source Code...'
-        
-        # Delete Git History
+        echo 'Cleaning Storage...'
         rm -rf .repo
-        
-        # Delete Unused Prebuilts
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
         rm -rf prebuilts/gcc/darwin-x86
+        rm -rf cts development/samples development/tutorials
         
-        # Delete Test Suites & Emulator (Saves ~3GB)
-        rm -rf cts
-        rm -rf development/samples
-        rm -rf development/tutorials
-        rm -rf prebuilts/android-emulator
-        rm -rf prebuilts/qemu-kernel
-        rm -rf device/generic
+        # DEEP GIT CLEAN: Find any remaining .git folders and delete them
+        find . -name \".git\" -type d -exec rm -rf {} +
         
         # 8. APPLY CODE FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
@@ -116,13 +108,15 @@ jobs:
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
         
+        # Restart Jack
         export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         ./prebuilts/sdk/tools/jack-admin kill-server
         ./prebuilts/sdk/tools/jack-admin start-server
         
-        # DISABLE DEXPREOPT TO SAVE SPACE
+        # --- CRITICAL SETTINGS ---
         export WITH_DEXPREOPT=false
         export USE_CCACHE=0
+        export CCACHE_DISABLE=true
         
         make -j2 bacon
         
