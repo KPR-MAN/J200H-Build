@@ -1,4 +1,4 @@
-name: J200H Build (No Symbols)
+name: J200H Build (Step-by-Step)
 
 on:
   workflow_dispatch:
@@ -61,12 +61,14 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
-        # 7. CLEAN STORAGE
+        # 7. CLEAN STORAGE (No Background Cleaner this time!)
+        echo 'Cleaning Initial Garbage...'
         rm -rf .repo
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
         rm -rf prebuilts/gcc/darwin-x86
         rm -rf cts development/samples development/tutorials
+        # Delete .git folders to save ~1GB
         find . -name \".git\" -type d -exec rm -rf {} +
         
         # 8. APPLY CODE FIXES
@@ -89,10 +91,9 @@ jobs:
         echo 'TARGET_KERNEL_HEADER_ARCH := arm' >> \$BC_FILE
         echo 'BOARD_KERNEL_IMAGE_NAME := zImage' >> \$BC_FILE
         
-        # 9. Build
+        # 9. BUILD SETUP
         source build/envsetup.sh
         lunch lineage_j23g-userdebug
-        
         export ANDROID_JACK_VM_ARGS=\"-Dfile.encoding=UTF-8 -XX:+TieredCompilation -Xmx4g\"
         ./prebuilts/sdk/tools/jack-admin kill-server
         ./prebuilts/sdk/tools/jack-admin start-server
@@ -101,28 +102,34 @@ jobs:
         export USE_CCACHE=0
         export CCACHE_DISABLE=true
         
-        # --- PHASE 1: KERNEL ---
-        echo '--- Building Boot Image ---'
+        # ----------------------------------------
+        # 10. STEP 1: BUILD KERNEL
+        # ----------------------------------------
+        echo '=== Building Boot Image ==='
         make -j2 bootimage
         
+        # Save it
         mkdir -p /root/android/final_output
         cp out/target/product/j23g/boot.img /root/android/final_output/
         
-        echo '--- Cleaning Kernel Objects ---'
+        # Clean Kernel Trash
+        echo '=== Cleaning Kernel Objects ==='
         rm -rf out/target/product/j23g/obj/KERNEL_OBJ
         
-        # --- PHASE 2: SYSTEM ---
-        echo '--- Building System Image ---'
+        # ----------------------------------------
+        # 11. STEP 2: BUILD FRAMEWORK (Java)
+        # ----------------------------------------
+        echo '=== Building Framework ==='
+        make -j2 framework
         
-        # START BACKGROUND CLEANER
-        # This constantly deletes the 'symbols' folder.
-        (
-            while true; do
-                sleep 30
-                rm -rf out/target/product/j23g/symbols
-            done
-        ) &
+        # Clean Framework Trash (This is huge)
+        echo '=== Cleaning Framework Objects ==='
+        rm -rf out/target/common/obj/JAVA_LIBRARIES/framework_intermediates
         
+        # ----------------------------------------
+        # 12. STEP 3: BUILD SYSTEM IMAGE
+        # ----------------------------------------
+        echo '=== Building System Image ==='
         make -j2 systemimage
         
         cp out/target/product/j23g/system.img /root/android/final_output/
