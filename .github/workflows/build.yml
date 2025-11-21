@@ -1,4 +1,4 @@
-name: J200H Build (Raw Images)
+name: J200H Build (No Symbols)
 
 on:
   workflow_dispatch:
@@ -61,7 +61,7 @@ jobs:
         # 6. Sync
         repo sync -c -j\$(nproc --all) --force-sync --no-clone-bundle --no-tags || true
 
-        # 7. DELETE STORAGE HOGS
+        # 7. CLEAN STORAGE
         rm -rf .repo
         rm -rf prebuilts/clang/host/darwin-x86
         rm -rf prebuilts/gcc/linux-x86/host/x86_64-w64-mingw32-4.8
@@ -69,7 +69,7 @@ jobs:
         rm -rf cts development/samples development/tutorials
         find . -name \".git\" -type d -exec rm -rf {} +
         
-        # 8. APPLY FIXES
+        # 8. APPLY CODE FIXES
         sed -i 's/return -ENODEV;/return;/g' kernel/samsung/j23g/drivers/usb/gadget/dwc_otg/usb_hw.c
         find kernel/samsung/j23g -name 'Makefile' -exec sed -i 's/-Werror//g' {} +
         echo 'KBUILD_CFLAGS += -w' >> kernel/samsung/j23g/Makefile
@@ -99,26 +99,32 @@ jobs:
         
         export WITH_DEXPREOPT=false
         export USE_CCACHE=0
+        export CCACHE_DISABLE=true
         
-        # --- BUILD STRATEGY CHANGE ---
-        
-        # 1. Build ONLY Boot Image (Kernel)
+        # --- PHASE 1: KERNEL ---
         echo '--- Building Boot Image ---'
         make -j2 bootimage
         
-        # Move it to safety
         mkdir -p /root/android/final_output
         cp out/target/product/j23g/boot.img /root/android/final_output/
         
-        # DELETE Kernel Objects to free space for System
-        echo '--- Deleting Kernel Objects ---'
+        echo '--- Cleaning Kernel Objects ---'
         rm -rf out/target/product/j23g/obj/KERNEL_OBJ
         
-        # 2. Build ONLY System Image
+        # --- PHASE 2: SYSTEM ---
         echo '--- Building System Image ---'
+        
+        # START BACKGROUND CLEANER
+        # This constantly deletes the 'symbols' folder.
+        (
+            while true; do
+                sleep 30
+                rm -rf out/target/product/j23g/symbols
+            done
+        ) &
+        
         make -j2 systemimage
         
-        # Move it to safety
         cp out/target/product/j23g/system.img /root/android/final_output/
         
         # --- INSIDE DOCKER END ---
